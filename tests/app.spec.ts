@@ -428,11 +428,12 @@ test("PWAの準備後はオフライン再読み込みでレシピと保存し�
 
 test("390px幅ですべての主画面を操作でき、バックグラウンドで有料APIへ送信しない", async ({
   page,
+  baseURL,
 }) => {
   const requests: string[] = [];
   page.on("request", (r) => {
     const url = new URL(r.url());
-    if (url.origin !== "http://127.0.0.1:3300" || r.method() !== "GET")
+    if (url.origin !== new URL(baseURL!).origin || r.method() !== "GET")
       requests.push(r.url());
   });
   await page.setViewportSize({ width: 390, height: 844 });

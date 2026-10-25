@@ -58,3 +58,11 @@ iPhoneはSafariの共有メニューから「ホーム画面に追加」、Andro
 ChatGPTプロジェクト用の指示文は [CHATGPT_PROJECT_INSTRUCTIONS.md](CHATGPT_PROJECT_INSTRUCTIONS.md)。検証の範囲は [RELEASE_CHECKS.md](RELEASE_CHECKS.md) を参照してください。
 
 食品の安全性やアレルギーは自動保証しません。予定日は安全期限ではありません。加熱・冷却・保存・再加熱は実物の状態と表示を確認してください。バックグラウンドでタイマー音や通知が必ず鳴る保証はありません。
+
+## 公開中の全操作を再検証
+
+Bash等で次のコマンドを実行すると、ローカルサーバーを起動せず、公開URLに対して全16件のE2Eを実行します。テストごとに新しいブラウザcontextを使い、本人の端末データを操作しません。
+
+```bash
+KITCHEN_TEST_URL=https://giru28.github.io/kitchen-companion/ node node_modules/@playwright/test/cli.js test
+```
