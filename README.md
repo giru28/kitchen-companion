@@ -49,6 +49,8 @@ PLAYWRIGHT_BROWSERS_PATH=/tmp/lifeos-browsers npx playwright install chromium
 
 このリポジトリのソースはmain、ビルド済み静的ファイルはgh-pagesへ分けます。GitHub Freeの公開リポジトリ用Pagesを使い、カード登録・有料プラン変更・自動超過課金のあるサービスは利用しません。Pages設定が発行したHTTPS URLを開いてください。
 
+初回は [Settings → Pages](https://github.com/giru28/kitchen-companion/settings/pages) で、Sourceを **Deploy from a branch**、Branchを **gh-pages**、フォルダを **/(root)** にして **Save** を押します。配信が完了すると同じ画面に公開URLが表示されます。
+
 iPhoneはSafariの共有メニューから「ホーム画面に追加」、AndroidはChromeのメニューからインストールします。初回はオンラインでオフライン準備が終わるまで待ってください。ChatGPT相談には通信が必要です。
 
 ChatGPTプロジェクト用の指示文は [CHATGPT_PROJECT_INSTRUCTIONS.md](CHATGPT_PROJECT_INSTRUCTIONS.md)。検証の範囲は [RELEASE_CHECKS.md](RELEASE_CHECKS.md) を参照してください。
