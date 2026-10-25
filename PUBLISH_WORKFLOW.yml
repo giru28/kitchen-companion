@@ -1,0 +1,57 @@
+# 単独の無料・公開リポジトリで使う場合、.github/workflows/publish.yml へコピー。
+# この見本を置くだけでは公開しません。GitHub Pagesの利用条件を確認してから手動実行します。
+name: Publish Kitchen (manual)
+on:
+  workflow_dispatch:
+    inputs:
+      project_path:
+        description: '元リポジトリ配下なら kitchen-app、単独リポジトリなら .'
+        type: choice
+        options:
+          - kitchen-app
+          - '.'
+        default: kitchen-app
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: kitchen-pages
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.project_path }}
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: /tmp/lifeos-browsers
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: ${{ inputs.project_path }}/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - run: npm run test:e2e
+        env:
+          KITCHEN_TEST_SUBPATH: '1'
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ inputs.project_path }}/dist
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
