@@ -10,3 +10,15 @@
 - iPhone/Android実機とホーム画面への追加は未検証。
 
 E2Eは専用の新しいブラウザデータで実行し、実際の購入・料理・ChatGPTへの送信は行っていません。無料公開用CIのテンプレートはPUBLISH_WORKFLOW.ymlです。GitHub Actionsで配信する場合は同ファイルの説明に従ってください。
+
+## 実際の公開先での検証（2026-10-26・日本時間）
+
+公開URL: https://giru28.github.io/kitchen-companion/
+
+- GitHub Pagesの状態built、gh-pagesブランチのルート配信、HTTPS強制をAPIで確認。
+- HTML・JS/CSS・manifest・Service Worker・アイコンの全配信ファイルがHTTP 200で返り、検証済みビルドとバイト単位で一致。
+- 公開先の390px幅Chromiumでアプリ起動、IndexedDBへの設定保存、オンライン再読み込みでの復元が成功。
+- Service Worker有効化後、実際に通信を切って再読み込みし、保存設定の復元と3つのレシピの参照を確認。
+- 横はみ出し・ブラウザ実行エラー・外部オリジンへの通信なし。
+
+利用者のデータではなく、独立した新規ブラウザcontextのテストデータで検証しました。iPhone/Android実機でのホーム画面追加は未検証です。
