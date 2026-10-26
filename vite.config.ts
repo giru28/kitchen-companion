@@ -35,7 +35,11 @@ function offline(): Plugin {
             )
             .join(""),
         )
+        .update(workerSource.toString())
         .update(readFileSync("public/icon.svg"))
+        .update(readFileSync("public/icon-192.png"))
+        .update(readFileSync("public/icon-512.png"))
+        .update(readFileSync("public/apple-touch-icon.png"))
         .digest("hex")
         .slice(0, 12);
       this.emitFile({

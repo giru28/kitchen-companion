@@ -3,7 +3,7 @@ import { runInNewContext } from "node:vm";
 import { workerSource } from "./service-worker";
 function harness(fetcher: (r: unknown) => Promise<Response>, cached = true) {
   const handlers: Record<string, (e: any) => void> = {};
-  const added: string[][] = [];
+  const added: Request[][] = [];
   const deleted: string[] = [];
   const matched: { key: unknown; options: unknown }[] = [];
   const opened: string[] = [];
@@ -20,7 +20,7 @@ function harness(fetcher: (r: unknown) => Promise<Response>, cached = true) {
     open: async (name: string) => {
       opened.push(name);
       return {
-        addAll: async (f: string[]) => {
+        addAll: async (f: Request[]) => {
           added.push(f);
         },
         match: async (key: unknown, options: unknown) => {
@@ -41,6 +41,7 @@ function harness(fetcher: (r: unknown) => Promise<Response>, cached = true) {
     fetch: fetcher,
     URL,
     Response,
+    Request,
   });
   return { handlers, added, deleted, matched, opened };
 }
@@ -50,7 +51,10 @@ describe("Service Workerとビルド単位のオフライン保存", () => {
     let task: Promise<unknown> = Promise.resolve();
     h.handlers.install({ waitUntil: (p: Promise<unknown>) => (task = p) });
     await task;
-    expect(h.added[0]).toContain("./app.js");
+    expect(h.added[0].map((r) => r.url)).toContain(
+      "https://example.test/kitchen/app.js",
+    );
+    expect(h.added[0].every((r) => r.cache === "reload")).toBe(true);
     h.handlers.activate({ waitUntil: (p: Promise<unknown>) => (task = p) });
     await task;
     expect(h.deleted).toEqual(["kitchen-%2Fkitchen%2F-old"]);
