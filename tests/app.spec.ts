@@ -793,3 +793,202 @@ for (const [name, invalid] of [
     ).toBeVisible();
     expect((await state(page)).recipes).toHaveLength(3);
   });
+
+test("一部だけ家にある・購入した数量を保存し、不足分のメモを手動コピーできる", async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, "clipboard", {
+      value: undefined,
+      configurable: true,
+    }),
+  );
+  await importTestRecipe(page);
+  await page
+    .getByRole("link", {
+      name: "買い物をまとめる・一部の量を入力",
+      exact: true,
+    })
+    .click();
+  const rice = page
+    .getByTestId("shopping-group")
+    .filter({ has: page.getByRole("heading", { name: "米", exact: true }) });
+  await rice.getByText("一部だけそろえる", { exact: true }).click();
+  const amount = rice.getByLabel("入力する数量（米・g）", { exact: true });
+  await amount.fill("200");
+  await rice
+    .getByRole("button", { name: "米の入力した量は家にある", exact: true })
+    .click();
+  await expect
+    .poll(async () => (await state(page)).runs[0].shopping[0].onHandQuantity)
+    .toBe(200);
+  await expect(rice).toContainText("買い足し 400 g");
+  await amount.fill("401");
+  await rice
+    .getByRole("button", { name: "米の入力した量は家にある", exact: true })
+    .click();
+  await expect(page.getByRole("alert")).toContainText("不足分以下");
+  expect((await state(page)).runs[0].shopping[0].onHandQuantity).toBe(200);
+  await amount.fill("100");
+  await rice
+    .getByRole("button", { name: "米の入力した量を購入した", exact: true })
+    .click();
+  await expect
+    .poll(async () => (await state(page)).runs[0].shopping[0].boughtQuantity)
+    .toBe(100);
+  await expect(rice).toContainText("買い足し 300 g");
+  await page
+    .getByRole("button", { name: "不足分をコピー", exact: true })
+    .click();
+  const memo = page.getByLabel("コピーする買い物メモ", { exact: true });
+  await expect(memo).toBeVisible();
+  await expect(memo).toHaveValue(/米 300 g/);
+  await expect(memo).toHaveValue(/保冷/);
+  await expect(memo).toBeFocused();
+  await page.reload();
+  await expect(rice).toContainText("買い足し 300 g");
+});
+
+test("料理名・食材を全角でも検索でき、お気に入りと組み合わせられる", async ({
+  page,
+}) => {
+  await importTestRecipe(page);
+  await navigate(page, "料理");
+  const search = page.getByLabel("料理名・食材で探す", { exact: true });
+  await search.fill("Ｅ２Ｅ　鶏");
+  await expect(page.locator(".recipe-grid > article")).toHaveCount(1);
+  await expect(recipeCard(page, rawRecipe.title)).toBeVisible();
+  await recipeCard(page, rawRecipe.title)
+    .getByRole("button", {
+      name: `${rawRecipe.title}をお気に入りにする`,
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole("combobox", { name: "レシピの表示", exact: true })
+    .selectOption("favorite");
+  await expect(page.locator(".recipe-grid > article")).toHaveCount(1);
+  await search.fill("存在しない料理名");
+  await expect(page.locator(".recipe-grid > article")).toHaveCount(0);
+  await page.getByRole("button", { name: "検索をクリア", exact: true }).click();
+  await expect(page.locator(".recipe-grid > article")).toHaveCount(1);
+});
+
+test("工程メモを次へ・AI相談・別画面へ移る時に保存し、料理を再開できる", async ({
+  page,
+}) => {
+  await importTestRecipe(page);
+  await procure(page);
+  await page
+    .getByLabel("この工程のメモ", { exact: true })
+    .fill("下準備の量を確認した");
+  await page
+    .getByRole("button", { name: "この工程を完了して次へ", exact: true })
+    .click();
+  await expect
+    .poll(async () => (await state(page)).runs[0].completed.length)
+    .toBe(1);
+  expect((await state(page)).runs[0].notes["prep-1"]).toBe(
+    "下準備の量を確認した",
+  );
+  await page
+    .getByLabel("この工程のメモ", { exact: true })
+    .fill("肉が一度に入り切らない");
+  await page.getByRole("button", { name: "AIに質問", exact: true }).click();
+  await page
+    .getByText("生成した相談文を確認・手動コピー", { exact: true })
+    .click();
+  await expect(
+    page.getByLabel("ChatGPTへ渡す相談文", { exact: true }),
+  ).toHaveValue(/肉が一度に入り切らない/);
+  await navigate(page, "ホーム");
+  await page
+    .getByRole("button", {
+      name: `${rawRecipe.title}の続きをする`,
+      exact: true,
+    })
+    .click();
+  await expect(page.getByLabel("この工程のメモ", { exact: true })).toHaveValue(
+    "肉が一度に入り切らない",
+  );
+  await page
+    .getByLabel("この工程のメモ", { exact: true })
+    .fill("分けて加熱することにした");
+  await navigate(page, "ホーム");
+  await expect
+    .poll(async () => (await state(page)).runs[0].notes["cook-1"])
+    .toBe("分けて加熱することにした");
+  await page.reload();
+  await page
+    .getByRole("button", {
+      name: `${rawRecipe.title}の続きをする`,
+      exact: true,
+    })
+    .click();
+  await expect(page.getByLabel("この工程のメモ", { exact: true })).toHaveValue(
+    "分けて加熱することにした",
+  );
+  await expect(
+    page.getByRole("progressbar", { name: "料理の進み具合", exact: true }),
+  ).toHaveAttribute("value", "1");
+});
+
+for (const denied of [false, true])
+  test(`画面点灯の保持を明示操作だけで要求し、${denied ? "拒否時は説明する" : "別画面へ移ると解除する"}`, async ({
+    page,
+  }) => {
+    await page.addInitScript((denied) => {
+      const record = window as unknown as {
+        wakeRequests: number;
+        wakeReleases: number;
+      };
+      record.wakeRequests = 0;
+      record.wakeReleases = 0;
+      Object.defineProperty(navigator, "wakeLock", {
+        configurable: true,
+        value: {
+          request: async () => {
+            record.wakeRequests++;
+            if (denied) throw Error("NotAllowedError");
+            const lock = new EventTarget();
+            return Object.assign(lock, {
+              released: false,
+              release: async () => {
+                record.wakeReleases++;
+                lock.dispatchEvent(new Event("release"));
+              },
+            });
+          },
+        },
+      });
+    }, denied);
+    await importTestRecipe(page);
+    await procure(page);
+    expect(
+      await page.evaluate(
+        () => (window as unknown as { wakeRequests: number }).wakeRequests,
+      ),
+    ).toBe(0);
+    await page
+      .getByRole("button", { name: "画面の点灯を保つ", exact: true })
+      .click();
+    if (denied) {
+      await expect(
+        page
+          .getByRole("status")
+          .filter({ hasText: "画面の点灯を保持できませんでした" }),
+      ).toBeVisible();
+    } else {
+      await expect(
+        page.getByRole("status").filter({ hasText: "点灯を保持中" }),
+      ).toBeVisible();
+      await navigate(page, "ホーム");
+      await expect
+        .poll(async () =>
+          page.evaluate(
+            () => (window as unknown as { wakeReleases: number }).wakeReleases,
+          ),
+        )
+        .toBe(1);
+    }
+  });

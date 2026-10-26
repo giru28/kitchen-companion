@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { AppProps, CookingRun } from "../types";
+import { now } from "../types";
+import { useScreenWakeLock } from "../hooks/useScreenWakeLock";
 import {
   beginPreparation,
   finishStep,
@@ -114,6 +116,13 @@ export function Cooking(props: AppProps & { runId?: string }) {
   const [clock, setClock] = useState(Date.now());
   const [minutes, setMinutes] = useState(3);
   const [memo, setMemo] = useState("");
+  const pendingMemo = useRef<{
+    runId: string;
+    stepId: string;
+    text: string;
+  } | null>(null);
+  const changeRef = useRef(change);
+  changeRef.current = change;
   const [question, setQuestion] = useState("");
   const [size, setSize] = useState(run?.servings ?? 6);
   const [storage, setStorage] = useState<StorageInput>({
@@ -127,6 +136,39 @@ export function Cooking(props: AppProps & { runId?: string }) {
     conditionNote: "",
   });
   const [checks, setChecks] = useState<string[]>([]);
+  const wake = useScreenWakeLock(
+    run?.stage === "prep" || run?.stage === "cook",
+  );
+  function persistMemo(value: NonNullable<typeof pendingMemo.current>) {
+    return changeRef.current((d) => {
+      const current = d.runs.find((r) => r.id === value.runId);
+      if (
+        !current ||
+        ![...current.recipe.prep, ...current.recipe.cook].some(
+          (s) => s.id === value.stepId,
+        )
+      )
+        return;
+      current.notes[value.stepId] = value.text;
+      current.updatedAt = now();
+    });
+  }
+  useEffect(
+    () => () => {
+      if (pendingMemo.current) void persistMemo(pendingMemo.current);
+    },
+    [],
+  );
+  useEffect(() => {
+    const pending = pendingMemo.current;
+    if (!pending) return;
+    const timer = setTimeout(() => {
+      void persistMemo(pending).then((ok) => {
+        if (ok && pendingMemo.current === pending) pendingMemo.current = null;
+      });
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [memo]);
   useEffect(() => {
     const t = setInterval(() => setClock(Date.now()), 1000);
     return () => clearInterval(t);
@@ -187,11 +229,25 @@ export function Cooking(props: AppProps & { runId?: string }) {
   async function next() {
     if (!run || !step) return;
     if (run.completed.includes(step.id)) {
+      if (!(await update(withMemo))) return;
       setViewId(allSteps[index + 1]?.id ?? run.activeStepId);
       return;
     }
-    if (await update((current) => finishStep(current, step.id)))
+    if (await update((current) => finishStep(withMemo(current), step.id)))
       setViewId(null);
+  }
+  function withMemo(current: CookingRun) {
+    return step
+      ? {
+          ...current,
+          notes: { ...current.notes, [step.id]: memo },
+          updatedAt: now(),
+        }
+      : current;
+  }
+  async function consult(questionText: string) {
+    if (!run) return;
+    if (!step || (await update(withMemo))) openAI(questionText, run.id);
   }
   return (
     <div className="stack cooking-screen">
@@ -234,6 +290,9 @@ export function Cooking(props: AppProps & { runId?: string }) {
           <p className="muted">
             購入済みの量は消しません。分量を増やすと追加の不足量が表示されます。
           </p>
+          <a className="button secondary" href="#shopping">
+            買い物をまとめる・一部の量を入力
+          </a>
           {run.shopping.map((item) => (
             <article className="card" key={item.ingredientId}>
               <strong>
@@ -330,6 +389,36 @@ export function Cooking(props: AppProps & { runId?: string }) {
               <span className="badge">完了済み・閲覧中</span>
             )}
           </div>
+          <progress
+            className="cooking-progress"
+            aria-label="料理の進み具合"
+            max={allSteps.length}
+            value={run.completed.length}
+          />
+          <div className="row">
+            <button
+              className="button secondary small"
+              disabled={!wake.supported}
+              onClick={wake.toggle}
+              aria-pressed={wake.enabled}
+            >
+              {wake.enabled ? "画面の点灯保持をやめる" : "画面の点灯を保つ"}
+            </button>
+            <span className="muted" role="status">
+              {wake.active
+                ? "点灯を保持中"
+                : wake.enabled
+                  ? "画面が表示されている間に保持します"
+                  : !wake.supported
+                    ? "このブラウザでは端末の自動ロック設定を使ってください"
+                    : "調理中だけ使えます"}
+            </span>
+          </div>
+          {wake.message && (
+            <p className="notice" role="status">
+              {wake.message}
+            </p>
+          )}
           <h2>{step.title}</h2>
           <p className="step-instruction">{step.instructions[0]}</p>
           <details open={step.instructions.length < 3}>
@@ -375,19 +464,29 @@ export function Cooking(props: AppProps & { runId?: string }) {
               <p>材料を直接使わない工程です。</p>
             )}
           </div>
-          <label className="field">
-            この工程のメモ
-            <textarea value={memo} onChange={(e) => setMemo(e.target.value)} />
-          </label>
+          <div className="field">
+            <label htmlFor="cooking-memo">この工程のメモ</label>
+            <textarea
+              id="cooking-memo"
+              maxLength={10000}
+              value={memo}
+              onChange={(e) => {
+                pendingMemo.current = {
+                  runId: run.id,
+                  stepId: step.id,
+                  text: e.target.value,
+                };
+                setMemo(e.target.value);
+              }}
+            />
+            <small className="muted">
+              入力後に自動保存します。次へ進む時やAI相談へ移る時も、メモを引き継ぎます。
+            </small>
+          </div>
           <button
             className="button secondary"
             disabled={busy}
-            onClick={() =>
-              void update((r) => ({
-                ...r,
-                notes: { ...r.notes, [step.id]: memo },
-              }))
-            }
+            onClick={() => void update(withMemo)}
           >
             工程メモを保存
           </button>
@@ -395,7 +494,10 @@ export function Cooking(props: AppProps & { runId?: string }) {
             <button
               className="button secondary"
               disabled={busy || index <= 0}
-              onClick={() => setViewId(allSteps[index - 1]?.id ?? null)}
+              onClick={async () => {
+                if (await update(withMemo))
+                  setViewId(allSteps[index - 1]?.id ?? null);
+              }}
             >
               戻る
             </button>
@@ -410,8 +512,9 @@ export function Cooking(props: AppProps & { runId?: string }) {
             </button>
             <button
               className="button secondary"
+              disabled={busy}
               onClick={() =>
-                openAI(question || "今の工程について詳しく教えて", run.id)
+                void consult(question || "今の工程について詳しく教えて")
               }
             >
               AIに質問
@@ -546,8 +649,9 @@ export function Cooking(props: AppProps & { runId?: string }) {
         </label>
         <button
           className="button secondary"
+          disabled={busy}
           onClick={() =>
-            openAI(question || "今の状態で次に何をすればよいか教えて", run.id)
+            void consult(question || "今の状態で次に何をすればよいか教えて")
           }
         >
           状況をまとめてAIに相談

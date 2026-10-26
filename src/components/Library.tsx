@@ -73,6 +73,7 @@ function advanced(recipe: Recipe) {
 export function Library({ data, change, startRecipe, openAI }: AppProps) {
   const [servings, setServings] = useState(data.preferences.servings);
   const [filter, setFilter] = useState<"all" | "favorite">("all");
+  const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<Recipe | null>(null);
   const [details, setDetails] = useState("");
   const [notice, setNotice] = useState("");
@@ -144,9 +145,26 @@ export function Library({ data, change, startRecipe, openAI }: AppProps) {
       setError(problem(cause));
     }
   }
-  const visible = data.recipes.filter(
-    (recipe) => filter === "all" || recipe.favorite,
-  );
+  const words = search
+    .normalize("NFKC")
+    .toLocaleLowerCase("ja-JP")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  const visible = data.recipes.filter((recipe) => {
+    const text = [
+      recipe.title,
+      recipe.description,
+      ...recipe.ingredients.map((i) => i.name),
+    ]
+      .join(" ")
+      .normalize("NFKC")
+      .toLocaleLowerCase("ja-JP");
+    return (
+      (filter === "all" || recipe.favorite) &&
+      words.every((word) => text.includes(word))
+    );
+  });
   return (
     <section className="stack" aria-labelledby="library-title">
       <header>
@@ -171,6 +189,15 @@ export function Library({ data, change, startRecipe, openAI }: AppProps) {
         </button>
       </div>
       <div className="panel row">
+        <label className="field recipe-search">
+          料理名・食材で探す
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="例：鶏 にんじん"
+          />
+        </label>
         <label className="field">
           今回作る食数
           <input
@@ -195,6 +222,17 @@ export function Library({ data, change, startRecipe, openAI }: AppProps) {
           </select>
         </label>
       </div>
+      {search.trim() && (
+        <p className="muted" role="status">
+          検索結果 {visible.length}件{" "}
+          <button
+            className="button secondary small"
+            onClick={() => setSearch("")}
+          >
+            検索をクリア
+          </button>
+        </p>
+      )}
       {notice && (
         <p role="status" className="alert">
           {notice}

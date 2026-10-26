@@ -1,82 +1,46 @@
 import { useRef, useState } from "react";
-import type { AppProps, Category, CookingRun, ShoppingItem } from "../types";
-import { now } from "../types";
-
-export const shoppingCategories: Record<Category, string> = {
-  meat: "肉・魚",
-  vegetable: "野菜",
-  egg: "卵・乳製品",
-  grain: "米・麺",
-  seasoning: "調味料",
-  other: "その他",
-};
-export const missingQuantity = (item: ShoppingItem) =>
-  Math.max(
-    0,
-    Math.round(
-      (item.quantity - item.onHandQuantity - item.boughtQuantity) * 10000,
-    ) / 10000,
-  );
-const itemKey = (item: Pick<ShoppingItem, "name" | "unit" | "category">) =>
-  JSON.stringify([item.name, item.unit, item.category]);
-const pending = (run: CookingRun) =>
-  ["shopping", "prep", "cook"].includes(run.stage);
-const quantity = (value: number) =>
-  new Intl.NumberFormat("ja-JP", { maximumFractionDigits: 4 }).format(value);
-
-export interface ShoppingGroup {
-  key: string;
-  name: string;
-  unit: string;
-  category: Category;
-  required: number;
-  onHand: number;
-  bought: number;
-  missing: number;
-  runIds: string[];
-}
-/** Only identical names, units, and categories are merged. Confirmed quantities stay allocated to their run. */
-export function aggregateShopping(runs: CookingRun[]): ShoppingGroup[] {
-  const groups = new Map<string, ShoppingGroup>();
-  for (const run of runs.filter(pending))
-    for (const item of run.shopping) {
-      const key = itemKey(item);
-      const group = groups.get(key) ?? {
-        key,
-        name: item.name,
-        unit: item.unit,
-        category: item.category,
-        required: 0,
-        onHand: 0,
-        bought: 0,
-        missing: 0,
-        runIds: [],
-      };
-      group.required += item.quantity;
-      group.onHand += item.onHandQuantity;
-      group.bought += item.boughtQuantity;
-      group.missing += missingQuantity(item);
-      if (!group.runIds.includes(run.id)) group.runIds.push(run.id);
-      groups.set(key, group);
-    }
-  return [...groups.values()].map((group) => ({
-    ...group,
-    required: Math.round(group.required * 10000) / 10000,
-    onHand: Math.round(group.onHand * 10000) / 10000,
-    bought: Math.round(group.bought * 10000) / 10000,
-    missing: Math.round(group.missing * 10000) / 10000,
-  }));
-}
+import type { AppProps, Category } from "../types";
+import {
+  aggregateShopping,
+  confirmShoppingGroup,
+  missingQuantity,
+  pending,
+  quantity,
+  shoppingCategories,
+  shoppingText,
+  type ShoppingGroup,
+} from "../domain/shopping";
 
 export function Shopping({ data, change, openRun, openAI }: AppProps) {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [showReady, setShowReady] = useState(false);
+  const [amounts, setAmounts] = useState<Record<string, string>>({});
+  const textRef = useRef<HTMLTextAreaElement>(null);
+  const memoRef = useRef<HTMLDetailsElement>(null);
   const locked = useRef(false);
   const runs = data.runs.filter(pending);
   const groups = aggregateShopping(runs);
   const needed = groups.filter((group) => group.missing > 0);
+  const memo = shoppingText(data.runs);
+  function selectMemo() {
+    if (memoRef.current) memoRef.current.open = true;
+    textRef.current?.focus();
+    textRef.current?.select();
+    setNotice("買い物メモを選択しました。長押ししてコピーできます。");
+  }
+  async function copyMemo() {
+    try {
+      if (!navigator.clipboard?.writeText) return selectMemo();
+      await navigator.clipboard.writeText(memo);
+      setNotice(
+        "不足分をコピーしました。メモやメッセージへ、ご自身で貼り付けられます。",
+      );
+    } catch {
+      selectMemo();
+    }
+  }
   const retired = data.runs.flatMap((run) =>
     run.retiredShopping
       .filter((item) => item.boughtQuantity > 0 || item.onHandQuantity > 0)
@@ -86,6 +50,7 @@ export function Shopping({ data, change, openRun, openAI }: AppProps) {
   async function confirmGroup(
     group: ShoppingGroup,
     mode: "home" | "bought" | "missing",
+    amount?: number,
   ) {
     if (locked.current) return;
     if (
@@ -100,41 +65,26 @@ export function Shopping({ data, change, openRun, openAI }: AppProps) {
     setError("");
     setNotice("");
     try {
+      confirmShoppingGroup(data.runs, group.key, mode, amount);
       const ok = await change((draft) => {
-        for (const run of draft.runs.filter(pending)) {
-          let changed = false;
-          for (const item of run.shopping.filter(
-            (item) => itemKey(item) === group.key,
-          )) {
-            if (mode === "missing") {
-              if (run.stage !== "shopping") continue;
-              item.onHandQuantity = 0;
-              item.boughtQuantity = 0;
-              changed = true;
-            } else {
-              const amount = missingQuantity(item);
-              if (!amount) continue;
-              if (mode === "home") item.onHandQuantity += amount;
-              else item.boughtQuantity += amount;
-              changed = true;
-            }
-          }
-          if (changed) run.updatedAt = now();
-        }
+        draft.runs = confirmShoppingGroup(draft.runs, group.key, mode, amount);
       });
-      if (ok)
+      if (ok) {
+        setAmounts((values) => ({ ...values, [group.key]: "" }));
         setNotice(
           mode === "missing"
             ? `${group.name}の買い物段階の確認を戻しました。`
-            : `${group.name}を${mode === "home" ? "家にある" : "購入した"}と記録しました。永続在庫は増やしていません。`,
+            : `${group.name} ${quantity(amount ?? group.missing)} ${group.unit}を${mode === "home" ? "家にある" : "購入した"}と記録しました。`,
         );
-      else
+      } else
         setError(
           "買い物の確認を保存できませんでした。保存状態を確認して再試行してください。",
         );
-    } catch {
+    } catch (cause) {
       setError(
-        "買い物の確認を保存できませんでした。保存済みの数量を確認してください。",
+        cause instanceof Error
+          ? cause.message
+          : "買い物の確認を保存できませんでした。",
       );
     } finally {
       locked.current = false;
@@ -183,7 +133,7 @@ export function Shopping({ data, change, openRun, openAI }: AppProps) {
                 : "必要量の確認がそろいました。料理の続きを開けます。"}
             </p>
             <p className="muted">
-              数量は料理ごとの確認です。毎日の在庫台帳を作ったり、購入チェックで永続在庫を増やしたりしません。
+              記録は今回の料理で使う量です。家の在庫を毎日入力する必要はありません。
             </p>
             <label className="check">
               <input
@@ -193,6 +143,28 @@ export function Shopping({ data, change, openRun, openAI }: AppProps) {
               />
               そろった食材も表示
             </label>
+            <button
+              className="button secondary"
+              onClick={() => void copyMemo()}
+            >
+              不足分をコピー
+            </button>
+            <details ref={memoRef}>
+              <summary>買い物メモを表示</summary>
+              <div className="field">
+                <label htmlFor="shopping-memo">コピーする買い物メモ</label>
+                <textarea
+                  id="shopping-memo"
+                  rows={10}
+                  readOnly
+                  ref={textRef}
+                  value={memo}
+                />
+              </div>
+            </details>
+            <p className="muted">
+              肉・魚・冷蔵品は買い物の最後に。保冷して持ち帰り、製品の表示に従って保存してください。
+            </p>
           </section>
           {(Object.keys(shoppingCategories) as Category[]).map((category) => {
             const rows = groups.filter(
@@ -207,7 +179,7 @@ export function Shopping({ data, change, openRun, openAI }: AppProps) {
                 key={category}
               >
                 <h2>{shoppingCategories[category]}</h2>
-                {rows.map((group) => (
+                {rows.map((group, index) => (
                   <article
                     className="card stack"
                     data-testid="shopping-group"
@@ -232,24 +204,84 @@ export function Shopping({ data, change, openRun, openAI }: AppProps) {
                       {quantity(group.bought)} {group.unit}
                     </p>
                     {group.missing > 0 && (
-                      <div className="row">
-                        <button
-                          className="button secondary"
-                          disabled={busy}
-                          onClick={() => void confirmGroup(group, "home")}
-                          aria-label={`${group.name}は家にある`}
-                        >
-                          家にある
-                        </button>
-                        <button
-                          className="button"
-                          disabled={busy}
-                          onClick={() => void confirmGroup(group, "bought")}
-                          aria-label={`${group.name}を購入した`}
-                        >
-                          購入した
-                        </button>
-                      </div>
+                      <>
+                        <div className="row">
+                          <button
+                            className="button secondary"
+                            disabled={busy}
+                            onClick={() => void confirmGroup(group, "home")}
+                            aria-label={`${group.name}は家にある`}
+                          >
+                            家にある
+                          </button>
+                          <button
+                            className="button"
+                            disabled={busy}
+                            onClick={() => void confirmGroup(group, "bought")}
+                            aria-label={`${group.name}を購入した`}
+                          >
+                            購入した
+                          </button>
+                        </div>
+                        <details>
+                          <summary>一部だけそろえる</summary>
+                          <div className="stack">
+                            <p className="muted">
+                              今回の料理に使う量だけを入力します。同じ食材を複数の料理へ二重に数えません。
+                            </p>
+                            <div className="field">
+                              <label htmlFor={`amount-${category}-${index}`}>
+                                入力する数量（{group.name}・{group.unit}）
+                              </label>
+                              <input
+                                id={`amount-${category}-${index}`}
+                                type="number"
+                                min="0"
+                                max={group.missing}
+                                step="any"
+                                value={amounts[group.key] ?? ""}
+                                placeholder={`最大 ${quantity(group.missing)}`}
+                                onChange={(e) =>
+                                  setAmounts((values) => ({
+                                    ...values,
+                                    [group.key]: e.target.value,
+                                  }))
+                                }
+                              />
+                            </div>
+                            <div className="row">
+                              <button
+                                className="button secondary"
+                                disabled={busy || !amounts[group.key]}
+                                onClick={() =>
+                                  void confirmGroup(
+                                    group,
+                                    "home",
+                                    Number(amounts[group.key]),
+                                  )
+                                }
+                                aria-label={`${group.name}の入力した量は家にある`}
+                              >
+                                この量は家にある
+                              </button>
+                              <button
+                                className="button secondary"
+                                disabled={busy || !amounts[group.key]}
+                                onClick={() =>
+                                  void confirmGroup(
+                                    group,
+                                    "bought",
+                                    Number(amounts[group.key]),
+                                  )
+                                }
+                                aria-label={`${group.name}の入力した量を購入した`}
+                              >
+                                この量を購入した
+                              </button>
+                            </div>
+                          </div>
+                        </details>
+                      </>
                     )}
                     {(group.onHand > 0 || group.bought > 0) &&
                       runs.some(
