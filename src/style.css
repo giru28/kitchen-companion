@@ -419,6 +419,30 @@ input[type="radio"] {
 .recipe-search {
   flex: 1 1 100%;
 }
+.suggestion-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(265px, 100%), 1fr));
+  gap: 14px;
+}
+.menu-choice.stack {
+  gap: 10px;
+}
+.menu-choice h3,
+.menu-choice p {
+  margin-bottom: 0;
+}
+.menu-choice > .button {
+  width: 100%;
+}
+.menu-choice details {
+  padding: 10px 12px;
+}
+.menu-suggestions .tabs button {
+  font-size: 13px;
+}
+.custom-menu > section {
+  margin-top: 18px;
+}
 .cooking-progress {
   width: 100%;
   height: 10px;

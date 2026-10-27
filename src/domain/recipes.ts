@@ -83,7 +83,7 @@ function ing(
 ): Ingredient {
   return { id, name, quantity, unit, category, note };
 }
-function recipe(
+export function catalogRecipe(
   id: string,
   title: string,
   description: string,
@@ -119,7 +119,7 @@ function recipe(
 /** Editable samples; quantities are recipe examples, never market prices or nutrition guarantees. */
 export function initialRecipes(): Recipe[] {
   return [
-    recipe(
+    catalogRecipe(
       "sample-soboro",
       "鶏そぼろ・炒り卵・にんじん・ご飯セット",
       "6食分を別々に小分けし、食べるときに丼へ。炊飯・冷却時間は器具と量で変わります。",
@@ -254,7 +254,7 @@ export function initialRecipes(): Recipe[] {
         },
       ],
     ),
-    recipe(
+    catalogRecipe(
       "sample-pork",
       "豚しょうが煮・温野菜・ご飯セット",
       "薄切り肉と玉ねぎを煮て、温野菜とご飯を合わせます。冷凍後は野菜の食感が変わることがあります。",
@@ -404,7 +404,7 @@ export function initialRecipes(): Recipe[] {
         },
       ],
     ),
-    recipe(
+    catalogRecipe(
       "sample-roots",
       "鶏と根菜の煮物・ご飯セット",
       "鶏もも肉・大根・にんじんを一鍋で煮ます。ご飯と煮物を分けて小分け保存します。",

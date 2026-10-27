@@ -116,6 +116,9 @@ function aiJSON(recipe = rawRecipe) {
 async function assistant(page: Page) {
   await navigate(page, "ホーム");
   await page
+    .getByText("条件を細かく決める・ChatGPTに相談", { exact: true })
+    .click();
+  await page
     .getByRole("button", { name: "AIに献立を相談", exact: true })
     .click();
   await expect(
@@ -992,3 +995,166 @@ for (const denied of [false, true])
         .toBe(1);
     }
   });
+
+test("入力やChatGPT往復なしに3つの提案から選び、買い物と調理記録をまとめて作れる", async ({
+  page,
+}) => {
+  await home(page);
+  const section = page.getByRole("region", {
+    name: "アプリからの献立提案",
+    exact: true,
+  });
+  const cards = section.locator(".menu-choice");
+  await expect(cards).toHaveCount(3);
+  await expect(
+    page.getByRole("button", { name: "AIに献立を相談", exact: true }),
+  ).not.toBeVisible();
+  expect((await state(page)).recipes).toHaveLength(3);
+  expect((await state(page)).runs).toHaveLength(0);
+  const title = await cards
+    .first()
+    .getByRole("heading", { level: 3 })
+    .innerText();
+  await cards
+    .first()
+    .getByRole("button", { name: `${title}にする`, exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "材料をそろえる", exact: true }),
+  ).toBeVisible();
+  const data = await state(page);
+  expect(data.recipes).toHaveLength(4);
+  expect(data.runs).toHaveLength(1);
+  expect(data.runs[0].recipe.title).toBe(title);
+  expect(data.runs[0].servings).toBe(6);
+  expect(
+    data.runs[0].shopping.every(
+      (i) => i.onHandQuantity === 0 && i.boughtQuantity === 0,
+    ),
+  ).toBe(true);
+  expect(data.runs[0].recipe.reheat.length).toBeGreaterThan(0);
+  await page.reload();
+  expect((await state(page)).runs).toHaveLength(1);
+});
+
+test("ほかの候補と種類を切り替えてから選べ、野菜中心の料理をそのまま始められる", async ({
+  page,
+}) => {
+  await home(page);
+  const section = page.getByRole("region", {
+    name: "アプリからの献立提案",
+    exact: true,
+  });
+  const before = await section.locator(".menu-choice h3").allTextContents();
+  await section
+    .getByRole("button", { name: "ほかの候補を見る", exact: true })
+    .click();
+  const after = await section.locator(".menu-choice h3").allTextContents();
+  expect(after.every((title) => !before.includes(title))).toBe(true);
+  for (let i = 0; i < 4; i++)
+    await section
+      .getByRole("button", { name: "ほかの候補を見る", exact: true })
+      .click();
+  expect(await section.locator(".menu-choice h3").allTextContents()).toEqual(
+    after,
+  );
+  await section
+    .getByRole("button", { name: "野菜・豆腐", exact: true })
+    .click();
+  await expect(section.locator(".menu-choice")).toHaveCount(2);
+  await section.locator(".menu-choice").first().getByRole("button").click();
+  await expect.poll(async () => (await state(page)).runs.length).toBe(1);
+  expect(
+    (await state(page)).runs[0].shopping.some(
+      (i) => i.category === "meat" || i.category === "egg",
+    ),
+  ).toBe(false);
+});
+
+test("使い切りたい食材を保存するとアプリ内の候補を並べ替え、ChatGPTへ移動しない", async ({
+  page,
+}) => {
+  await home(page);
+  await page
+    .getByRole("button", { name: "家にある食材から考える", exact: true })
+    .click();
+  await page
+    .getByLabel("使い切りたい食材", { exact: true })
+    .fill("キャベツとにんじん");
+  await page
+    .getByRole("button", { name: "この食材で候補を出す", exact: true })
+    .click();
+  await expect
+    .poll(async () => (await state(page)).preferences.useUp)
+    .toBe("キャベツとにんじん");
+  const cards = page
+    .getByRole("region", { name: "アプリからの献立提案", exact: true })
+    .locator(".menu-choice");
+  for (let i = 0; i < 3; i++)
+    await expect(cards.nth(i)).toContainText("キャベツ");
+  expect(page.context().pages()).toHaveLength(1);
+  expect(page.url()).not.toContain("assistant");
+  expect((await state(page)).runs).toHaveLength(0);
+  expect((await state(page)).recipes).toHaveLength(3);
+  await page.reload();
+  await expect(cards).toHaveCount(3);
+});
+
+test("提案から保存したレシピの編集を次回の提案へ反映し、調理中のスナップショットを変えない", async ({
+  page,
+}) => {
+  await home(page);
+  const section = page.getByRole("region", {
+    name: "アプリからの献立提案",
+    exact: true,
+  });
+  await section.locator(".menu-choice").first().getByRole("button").click();
+  await expect.poll(async () => (await state(page)).runs.length).toBe(1);
+  const original = (await state(page)).runs[0].recipe.title;
+  await navigate(page, "料理");
+  await recipeCard(page, original)
+    .getByRole("button", { name: `${original}を編集`, exact: true })
+    .click();
+  await page
+    .getByLabel("料理名", { exact: true })
+    .fill("自分の味つけにした献立");
+  await page.getByRole("button", { name: "レシピを保存", exact: true }).click();
+  await recipeCard(page, "自分の味つけにした献立")
+    .getByRole("button", {
+      name: "自分の味つけにした献立をお気に入りにする",
+      exact: true,
+    })
+    .click();
+  await navigate(page, "ホーム");
+  await section
+    .getByRole("button", { name: "自分の味つけにした献立にする", exact: true })
+    .click();
+  await expect.poll(async () => (await state(page)).runs.length).toBe(2);
+  const data = await state(page);
+  expect(data.recipes).toHaveLength(4);
+  expect(data.runs[0].recipe.title).toBe(original);
+  expect(data.runs[1].recipe.title).toBe("自分の味つけにした献立");
+});
+
+test("オフラインで提案を見て選ぶだけでも新しい献立の買い物を始められる", async ({
+  page,
+  context,
+}) => {
+  await home(page);
+  await page.evaluate(async () => {
+    await navigator.serviceWorker.ready;
+  });
+  await page.reload();
+  await context.setOffline(true);
+  await page.reload();
+  const section = page.getByRole("region", {
+    name: "アプリからの献立提案",
+    exact: true,
+  });
+  await expect(section.locator(".menu-choice")).toHaveCount(3);
+  await section.locator(".menu-choice").first().getByRole("button").click();
+  await expect(
+    page.getByRole("heading", { name: "材料をそろえる", exact: true }),
+  ).toBeVisible();
+  expect((await state(page)).runs).toHaveLength(1);
+});

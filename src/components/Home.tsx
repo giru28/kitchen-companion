@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { AppProps, CookingRun, Recipe } from "../types";
 import { batchAgenda } from "../domain/batch";
+import { Suggestions } from "./Suggestions";
 
 const stages: Record<CookingRun["stage"], string> = {
   shopping: "材料をそろえる",
@@ -88,8 +89,9 @@ export function Home({
           draft.preferences.useUp = useUp.trim();
         })
       ) {
-        openAI(
-          `使い切りたい食材：${useUp.trim()}。現在の量や保存状態が不明なものは推測せず、料理を考えるのを手伝ってください。`,
+        setShowUseUp(false);
+        setNotice(
+          "食材メモを保存しました。候補に使える食材があれば優先して提案します。",
         );
       } else
         setNotice("食材のメモを保存できませんでした。もう一度試してください。");
@@ -132,7 +134,6 @@ export function Home({
   const favorites = data.recipes
     .filter((recipe) => recipe.favorite)
     .slice(0, 3);
-  const starterRecipes = data.recipes.slice(0, 3);
   const renderRecipe = (recipe: Recipe) => (
     <article className="card stack" key={recipe.id}>
       <h3>{recipe.title}</h3>
@@ -154,35 +155,39 @@ export function Home({
         <p className="eyebrow">KITCHEN COMPANION</p>
         <h1>今日は何作ろう？</h1>
         <p className="muted">
-          考えるところから、食べ切るところまで。いつもの条件は覚えています。
+          候補を選んだら、買い物から保存まで一緒に進めます。
         </p>
       </header>
-      <section className="panel stack" aria-label="今日の献立相談">
-        <div className="row">
-          <span className="badge">{data.preferences.people}人暮らし</span>
-          <span className="badge">基本{data.preferences.servings}食分</span>
-          <span className="badge">追加のAI API料金なし</span>
-        </div>
-        <form className="stack" onSubmit={(event) => void consult(event)}>
-          <label className="field">
-            今日はどんな料理にする？
-            <textarea
-              rows={3}
-              maxLength={3000}
-              value={wish}
-              onChange={(event) => setWish(event.target.value)}
-              onBlur={() => void persistWish(wish)}
-              placeholder="例：2人で3回食べられる、冷凍向けの料理"
-            />
-          </label>
-          <button className="button" type="submit" disabled={busy}>
-            AIに献立を相談
-          </button>
-        </form>
-        <p className="muted">
-          条件をまとめてコピーし、ChatGPTで相談できます。文章の自動入力・送信は行いません。
-        </p>
-      </section>
+      <Suggestions data={data} startRecipe={startRecipe} openAI={openAI} />
+      <details className="panel custom-menu">
+        <summary>条件を細かく決める・ChatGPTに相談</summary>
+        <section className="stack" aria-label="今日の献立相談">
+          <div className="row">
+            <span className="badge">{data.preferences.people}人暮らし</span>
+            <span className="badge">基本{data.preferences.servings}食分</span>
+            <span className="badge">追加のAI API料金なし</span>
+          </div>
+          <form className="stack" onSubmit={(event) => void consult(event)}>
+            <label className="field">
+              今日はどんな料理にする？
+              <textarea
+                rows={3}
+                maxLength={3000}
+                value={wish}
+                onChange={(event) => setWish(event.target.value)}
+                onBlur={() => void persistWish(wish)}
+                placeholder="例：2人で3回食べられる、冷凍向けの料理"
+              />
+            </label>
+            <button className="button" type="submit" disabled={busy}>
+              AIに献立を相談
+            </button>
+          </form>
+          <p className="muted">
+            条件をまとめてコピーし、ChatGPTで相談できます。文章の自動入力・送信は行いません。
+          </p>
+        </section>
+      </details>
       {notice && (
         <p className="alert" role="status">
           {notice}
@@ -230,7 +235,7 @@ export function Home({
               毎日の在庫台帳は不要です。前回のメモが現在の在庫と一致するかは、手元で確認してください。
             </p>
             <button className="button" disabled={busy}>
-              この食材をAIに相談
+              この食材で候補を出す
             </button>
           </form>
         </section>
@@ -340,29 +345,6 @@ export function Home({
         <section className="panel stack" aria-label="お気に入り料理">
           <h2>お気に入りから</h2>
           <div className="cards">{favorites.map(renderRecipe)}</div>
-        </section>
-      )}
-      {!favorites.length && starterRecipes.length > 0 && (
-        <section className="panel stack" aria-label="すぐに作れる料理">
-          <div>
-            <h2>相談せず、すぐに作る</h2>
-            <p className="muted">手元のレシピはオフラインでも使えます。</p>
-          </div>
-          <div className="cards">{starterRecipes.map(renderRecipe)}</div>
-          <button className="button secondary" onClick={() => go("library")}>
-            すべての料理を見る
-          </button>
-        </section>
-      )}
-      {!data.recipes.length && (
-        <section className="panel">
-          <h2>最初のレシピを取り込む</h2>
-          <p>
-            ChatGPTへの相談内容を作り、確認したJSON回答からレシピを追加できます。
-          </p>
-          <button className="button" onClick={() => openAI(wish)}>
-            AI相談を開く
-          </button>
         </section>
       )}
     </div>

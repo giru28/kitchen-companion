@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { AppProps, KitchenData } from "./types";
+import type { AppProps, KitchenData, Recipe } from "./types";
 import { readState, saveState, type Saved } from "./store";
 import { createRun } from "./domain/cooking";
 import { Home } from "./components/Home";
@@ -149,23 +149,30 @@ export function App() {
     setRunId(id);
     go("assistant");
   }
-  async function startRecipe(id: string, servings?: number) {
-    const recipe = current.current?.data.recipes.find((r) => r.id === id);
-    if (!recipe) {
-      setError("レシピが見つかりません。レシピ一覧を確認してください。");
-      return;
-    }
+  async function startRecipe(
+    id: string,
+    servings?: number,
+    suggestion?: Recipe,
+  ) {
     try {
-      const run = createRun(
-        recipe,
-        servings ?? current.current!.data.preferences.servings,
-      );
+      let runId: string | undefined;
       if (
         await change((d) => {
+          let recipe = d.recipes.find((r) => r.id === id);
+          if (!recipe && suggestion?.id === id) {
+            recipe = structuredClone(suggestion);
+            d.recipes.push(recipe);
+          }
+          if (!recipe)
+            throw Error(
+              "レシピが見つかりません。レシピ一覧を確認してください。",
+            );
+          const run = createRun(recipe, servings ?? d.preferences.servings);
           d.runs.push(run);
+          runId = run.id;
         })
       ) {
-        openRun(run.id);
+        if (runId) openRun(runId);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "食数を確認してください。");

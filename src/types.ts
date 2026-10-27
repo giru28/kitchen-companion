@@ -1,5 +1,10 @@
 export type Category =
-  "meat" | "vegetable" | "egg" | "grain" | "seasoning" | "other";
+  | "meat"
+  | "vegetable"
+  | "egg"
+  | "grain"
+  | "seasoning"
+  | "other";
 export interface Ingredient {
   id: string;
   name: string;
@@ -111,7 +116,11 @@ export interface AppProps {
   data: KitchenData;
   change: (mutate: (draft: KitchenData) => void) => Promise<boolean>;
   openAI: (question?: string, runId?: string) => void;
-  startRecipe: (recipeId: string, servings?: number) => Promise<void>;
+  startRecipe: (
+    recipeId: string,
+    servings?: number,
+    suggestion?: Recipe,
+  ) => Promise<void>;
   openRun: (id: string) => void;
 }
 export const id = () => crypto.randomUUID();
