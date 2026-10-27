@@ -1,5 +1,5 @@
 
-const PREFIX='kitchen-'+encodeURIComponent(new URL(self.registration.scope).pathname)+'-',CACHE=PREFIX+"94024ed3e104",FILES=["./","./index.html","./manifest.webmanifest","./icon.svg","./icon-192.png","./icon-512.png","./apple-touch-icon.png","./assets/index-DRzwHUdT.css","./assets/index-CHJnBH0j.js"];
+const PREFIX='kitchen-'+encodeURIComponent(new URL(self.registration.scope).pathname)+'-',CACHE=PREFIX+"ecf462122367",FILES=["./","./index.html","./manifest.webmanifest","./icon.svg","./icon-192.png","./icon-512.png","./apple-touch-icon.png","./assets/index-_zMy8gRT.css","./assets/index-DLz7Jsv9.js"];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(FILES.map(file=>new Request(new URL(file,self.registration.scope),{cache:'reload'})))).then(()=>self.skipWaiting()));});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith(PREFIX)&&k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});
 self.addEventListener('fetch',e=>{const u=new URL(e.request.url);if(e.request.method!=='GET'||u.origin!==self.location.origin)return;
